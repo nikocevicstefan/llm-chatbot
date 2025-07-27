@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "lint": "echo \"Linting not configured yet\"",
     "typecheck": "tsc --noEmit",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "ngrok": "ngrok http --url=primarily-giving-sawfish.ngrok-free.app 3000"
   },
   "keywords": [],
   "author": "",

@@ -1,7 +1,9 @@
-import express, { Request, Response, NextFunction } from 'express';
-import helmet from 'helmet';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import express, { NextFunction, Request, Response } from 'express';
+import helmet from 'helmet';
+import { createRawBodyCapture } from './middleware/raw-body-capture';
+import webhookRoutes from './routes/webhooks';
 
 dotenv.config();
 
@@ -12,9 +14,19 @@ const PORT = process.env.PORT || 3000;
 app.use(helmet());
 app.use(cors());
 
-// Body parsing middleware
+// Secure raw body capture for webhook signature verification
+app.use(createRawBodyCapture({
+  limit: 512 * 1024, // 512KB limit for webhooks (reasonable for Telegram/Slack)
+  timeout: 5000,      // 5 second timeout (webhooks should be fast)
+  encoding: 'utf8'
+}));
+
+// Body parsing middleware for non-webhook routes
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// Routes
+app.use('/webhook', webhookRoutes);
 
 // Health check endpoint
 app.get('/health', (_req: Request, res: Response) => {
@@ -32,7 +44,12 @@ app.get('/', (_req: Request, res: Response) => {
     message: 'AI Chatbot Server Running',
     version: '1.0.0',
     endpoints: {
-      health: '/health'
+      health: '/health',
+      webhooks: {
+        telegram: '/webhook/telegram',
+        slack: '/webhook/slack',
+        health: '/webhook/health'
+      }
     }
   });
 });
@@ -49,11 +66,11 @@ app.use((_req: Request, res: Response) => {
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error('Error:', err.message);
   console.error('Stack:', err.stack);
-  
+
   res.status(500).json({
     error: 'Internal Server Error',
-    message: process.env.NODE_ENV === 'production' 
-      ? 'Something went wrong' 
+    message: process.env.NODE_ENV === 'production'
+      ? 'Something went wrong'
       : err.message
   });
 });
