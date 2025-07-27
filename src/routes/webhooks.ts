@@ -7,6 +7,7 @@ import {
   verifyTelegramBotTokenSignature
 } from '../utils/webhook-verification';
 import { AIService } from '../services/ai-service';
+import { ConversationService } from '../services/conversation-service';
 
 const router = express.Router();
 
@@ -139,9 +140,44 @@ router.post('/telegram', async (req: Request, res: Response): Promise<void> => {
       // Process asynchronously to respond to webhook quickly
       setImmediate(async () => {
         try {
-          const aiResponse = await aiService.processMessage(update.message!.text!);
+          // Persist user message to database
+          const { conversation } = await ConversationService.addUserMessage(
+            'telegram',
+            update.message!.chat!.id.toString(),
+            update.message!.from?.id?.toString() || 'unknown',
+            update.message!.text!,
+            update.message!.message_id?.toString(),
+            {
+              chat_type: update.message!.chat!.type,
+              from_username: update.message!.from?.username,
+              from_first_name: update.message!.from?.first_name,
+            }
+          );
+
+          // Get conversation history for context
+          const conversationHistory = await ConversationService.getConversationHistory(
+            conversation.id,
+            4000 // max tokens for context
+          );
+          
+          // Format messages for AI
+          const formattedMessages = ConversationService.formatMessagesForAI(conversationHistory);
+          
+          // Process with AI
+          const aiResponse = await aiService.processMessage(update.message!.text!, formattedMessages);
+          
+          // Persist AI response to database
+          await ConversationService.addAssistantMessage(
+            conversation.id,
+            aiResponse.content,
+            {
+              ...(aiResponse.usage?.totalTokens && { token_count: aiResponse.usage.totalTokens }),
+            }
+          );
+
+          // Send response to Telegram
           await sendTelegramMessage(update.message!.chat!.id, aiResponse.content);
-          console.log('✅ AI response sent to Telegram');
+          console.log('✅ AI response sent to Telegram and persisted to database');
         } catch (error) {
           console.error('❌ Failed to process message with AI:', error);
           await sendTelegramMessage(
@@ -222,9 +258,42 @@ router.post('/slack', async (req: Request, res: Response): Promise<void> => {
         // Process asynchronously to respond to webhook quickly
         setImmediate(async () => {
           try {
-            const aiResponse = await aiService.processMessage(event.event!.text!);
+            // Persist user message to database
+            const { conversation } = await ConversationService.addUserMessage(
+              'slack',
+              event.event!.channel!,
+              event.event!.user!,
+              event.event!.text!,
+              event.event!.ts,
+              {
+                team: event.team_id,
+              }
+            );
+
+            // Get conversation history for context
+            const conversationHistory = await ConversationService.getConversationHistory(
+              conversation.id,
+              4000 // max tokens for context
+            );
+            
+            // Format messages for AI
+            const formattedMessages = ConversationService.formatMessagesForAI(conversationHistory);
+            
+            // Process with AI
+            const aiResponse = await aiService.processMessage(event.event!.text!, formattedMessages);
+            
+            // Persist AI response to database
+            await ConversationService.addAssistantMessage(
+              conversation.id,
+              aiResponse.content,
+              {
+                ...(aiResponse.usage?.totalTokens && { token_count: aiResponse.usage.totalTokens }),
+              }
+            );
+
+            // Send response to Slack
             await sendSlackMessage(event.event!.channel!, aiResponse.content);
-            console.log('✅ AI response sent to Slack');
+            console.log('✅ AI response sent to Slack and persisted to database');
           } catch (error) {
             console.error('❌ Failed to process message with AI:', error);
             await sendSlackMessage(

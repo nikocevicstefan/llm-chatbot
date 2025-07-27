@@ -10,7 +10,11 @@
     "lint": "echo \"Linting not configured yet\"",
     "typecheck": "tsc --noEmit",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "ngrok": "ngrok http --url=primarily-giving-sawfish.ngrok-free.app 3000"
+    "ngrok": "ngrok http --url=primarily-giving-sawfish.ngrok-free.app 3000",
+    "db:migrate": "knex migrate:latest --knexfile knexfile.js",
+    "db:migrate:make": "knex migrate:make --knexfile knexfile.js",
+    "db:migrate:rollback": "knex migrate:rollback --knexfile knexfile.js",
+    "db:seed": "knex seed:run --knexfile knexfile.js"
   },
   "keywords": [],
   "author": "",
@@ -25,11 +29,14 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
+    "@types/pg": "^8.15.4",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "helmet": "^8.1.0",
+    "knex": "^3.1.0",
     "openai": "^5.10.2",
+    "pg": "^8.16.3",
     "zod": "^3.25.76"
   }
 }
