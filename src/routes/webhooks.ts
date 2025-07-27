@@ -6,8 +6,70 @@ import {
   verifySlackSignature,
   verifyTelegramBotTokenSignature
 } from '../utils/webhook-verification';
+import { AIService } from '../services/ai-service';
 
 const router = express.Router();
+
+// Initialize AI service
+const aiService = AIService.createFromConfig();
+
+// Helper function to send Telegram message
+async function sendTelegramMessage(chatId: number, text: string) {
+  if (!process.env.TELEGRAM_BOT_TOKEN) {
+    console.error('TELEGRAM_BOT_TOKEN not configured');
+    return;
+  }
+
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text,
+        parse_mode: 'Markdown',
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('Failed to send Telegram message:', error);
+    }
+  } catch (error) {
+    console.error('Error sending Telegram message:', error);
+  }
+}
+
+// Helper function to send Slack message
+async function sendSlackMessage(channel: string, text: string) {
+  if (!process.env.SLACK_BOT_TOKEN) {
+    console.error('SLACK_BOT_TOKEN not configured');
+    return;
+  }
+
+  try {
+    const response = await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        channel: channel,
+        text: text,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('Failed to send Slack message:', error);
+    }
+  } catch (error) {
+    console.error('Error sending Slack message:', error);
+  }
+}
 
 // Telegram webhook endpoint
 router.post('/telegram', async (req: Request, res: Response): Promise<void> => {
@@ -70,8 +132,25 @@ router.post('/telegram', async (req: Request, res: Response): Promise<void> => {
       timestamp: new Date().toISOString()
     });
 
-    // TODO: Queue message for AI processing
-    console.log('🔄 Queuing Telegram message for AI processing...');
+    // Process message with AI if it's a text message
+    if (update.message?.text && update.message?.chat?.id) {
+      console.log('🔄 Processing Telegram message with AI...');
+      
+      // Process asynchronously to respond to webhook quickly
+      setImmediate(async () => {
+        try {
+          const aiResponse = await aiService.processMessage(update.message!.text!);
+          await sendTelegramMessage(update.message!.chat!.id, aiResponse.content);
+          console.log('✅ AI response sent to Telegram');
+        } catch (error) {
+          console.error('❌ Failed to process message with AI:', error);
+          await sendTelegramMessage(
+            update.message!.chat!.id, 
+            'Sorry, I encountered an error processing your message. Please try again later.'
+          );
+        }
+      });
+    }
 
     // Acknowledge webhook immediately (Telegram expects response within 3 seconds)
     res.status(200).json({ ok: true });
@@ -137,9 +216,23 @@ router.post('/slack', async (req: Request, res: Response): Promise<void> => {
       });
 
       // Ignore bot messages to prevent loops
-      if (event.event.type === 'message' && event.event.user) {
-        // TODO: Queue message for AI processing
-        console.log('🔄 Queuing Slack message for AI processing...');
+      if (event.event && event.event.type === 'message' && event.event.user && event.event.text) {
+        console.log('🔄 Processing Slack message with AI...');
+        
+        // Process asynchronously to respond to webhook quickly
+        setImmediate(async () => {
+          try {
+            const aiResponse = await aiService.processMessage(event.event!.text!);
+            await sendSlackMessage(event.event!.channel!, aiResponse.content);
+            console.log('✅ AI response sent to Slack');
+          } catch (error) {
+            console.error('❌ Failed to process message with AI:', error);
+            await sendSlackMessage(
+              event.event!.channel!, 
+              'Sorry, I encountered an error processing your message. Please try again later.'
+            );
+          }
+        });
       }
     }
 
@@ -153,18 +246,32 @@ router.post('/slack', async (req: Request, res: Response): Promise<void> => {
 });
 
 // Health check for webhooks
-router.get('/health', (_req: Request, res: Response) => {
-  res.status(200).json({
-    status: 'ok',
-    endpoints: {
-      telegram: '/webhook/telegram',
-      slack: '/webhook/slack'
-    },
-    environment: {
-      telegram_configured: !!process.env.TELEGRAM_BOT_TOKEN,
-      slack_configured: !!process.env.SLACK_SIGNING_SECRET
-    }
-  });
+router.get('/health', async (_req: Request, res: Response) => {
+  try {
+    const aiHealth = await aiService.isHealthy();
+    
+    res.status(200).json({
+      status: 'ok',
+      endpoints: {
+        telegram: '/webhook/telegram',
+        slack: '/webhook/slack'
+      },
+      environment: {
+        telegram_configured: !!process.env.TELEGRAM_BOT_TOKEN,
+        slack_configured: !!process.env.SLACK_SIGNING_SECRET,
+        openai_configured: !!process.env.OPENAI_API_KEY,
+        selfhosted_configured: !!(process.env.SELFHOSTED_API_KEY && process.env.SELFHOSTED_BASE_URL),
+        fallback_openai_configured: !!process.env.FALLBACK_OPENAI_API_KEY,
+        fallback_selfhosted_configured: !!(process.env.FALLBACK_SELFHOSTED_API_KEY && process.env.FALLBACK_SELFHOSTED_BASE_URL)
+      },
+      ai_service: aiHealth
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      error: 'Failed to check AI service health'
+    });
+  }
 });
 
 export default router;
