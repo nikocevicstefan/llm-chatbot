@@ -3,6 +3,8 @@ import dotenv from 'dotenv';
 import express, { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { createRawBodyCapture } from './middleware/raw-body-capture';
+import './queue/message-processor'; // Initialize queue processing
+import { messageQueue } from './queue/queue-manager';
 import webhookRoutes from './routes/webhooks';
 
 dotenv.config();
@@ -36,6 +38,35 @@ app.get('/health', (_req: Request, res: Response) => {
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development'
   });
+});
+
+// Queue/Redis health check endpoint
+app.get('/health/queue', async (_req: Request, res: Response) => {
+  try {
+    const [waiting, active, completed, failed] = await Promise.all([
+      messageQueue.getWaiting(),
+      messageQueue.getActive(),
+      messageQueue.getCompleted(),
+      messageQueue.getFailed(),
+    ]);
+
+    const isHealthy = waiting.length < 100 && active.length < 20;
+    
+    res.status(isHealthy ? 200 : 503).json({
+      status: isHealthy ? 'healthy' : 'degraded',
+      waiting: waiting.length,
+      active: active.length,
+      completed: completed.length,
+      failed: failed.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(503).json({ 
+      status: 'error', 
+      error: 'Queue connection failed',
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Basic route for testing
