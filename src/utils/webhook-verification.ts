@@ -10,10 +10,10 @@ export function verifyTelegramBotTokenSignature(body: string, receivedHash?: str
         return false;
     }
 
-    // If no hash provided, we can't verify (but we'll allow it for backward compatibility)
+    // If no hash provided, reject the request for security
     if (!receivedHash) {
-        console.warn('No Telegram signature provided - consider implementing secret token');
-        return true;
+        console.error('No Telegram signature provided - webhook rejected for security');
+        return false;
     }
 
     try {

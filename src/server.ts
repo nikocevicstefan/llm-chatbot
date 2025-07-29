@@ -1,6 +1,7 @@
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express, { NextFunction, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { createRawBodyCapture } from './middleware/raw-body-capture';
 import './queue/message-processor'; // Initialize queue processing
@@ -16,6 +17,33 @@ const PORT = process.env.PORT || 3000;
 app.use(helmet());
 app.use(cors());
 
+// Rate limiting configuration
+const generalLimiter = rateLimit({
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000'), // 1 minute default
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'), // 100 requests per window
+  message: {
+    error: 'Too many requests',
+    message: 'Rate limit exceeded. Please try again later.'
+  },
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
+// Webhook-specific rate limiting (more restrictive)
+const webhookLimiter = rateLimit({
+  windowMs: 60000, // 1 minute
+  max: 50, // 50 webhook requests per minute per IP
+  message: {
+    error: 'Webhook rate limit exceeded',
+    message: 'Too many webhook requests. Please slow down.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Apply general rate limiting to all routes
+app.use(generalLimiter);
+
 // Secure raw body capture for webhook signature verification
 app.use(createRawBodyCapture({
   limit: 512 * 1024, // 512KB limit for webhooks (reasonable for Telegram/Slack)
@@ -23,12 +51,12 @@ app.use(createRawBodyCapture({
   encoding: 'utf8'
 }));
 
-// Body parsing middleware for non-webhook routes
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+// Body parsing middleware for non-webhook routes (reduced limits for security)
+app.use(express.json({ limit: '1mb' })); // Reduced from 10mb to 1mb
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-// Routes
-app.use('/webhook', webhookRoutes);
+// Routes with webhook-specific rate limiting
+app.use('/webhook', webhookLimiter, webhookRoutes);
 
 // Health check endpoint
 app.get('/health', (_req: Request, res: Response) => {
@@ -93,16 +121,17 @@ app.use((_req: Request, res: Response) => {
   });
 });
 
-// Error handling middleware
+// Error handling middleware - sanitized for security
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  // Log detailed error information for debugging (server-side only)
   console.error('Error:', err.message);
   console.error('Stack:', err.stack);
 
+  // Always return generic error message to prevent information disclosure
   res.status(500).json({
     error: 'Internal Server Error',
-    message: process.env.NODE_ENV === 'production'
-      ? 'Something went wrong'
-      : err.message
+    message: 'An unexpected error occurred. Please try again later.',
+    timestamp: new Date().toISOString()
   });
 });
 

@@ -3,9 +3,9 @@ services:
     image: postgres:15-alpine
     container_name: llm-chatbot-postgres
     environment:
-      POSTGRES_DB: llm_chatbot_dev
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ${DB_NAME:-llm_chatbot_dev}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme_secure_password_2024}
     ports:
       - "5432:5432"
     volumes:
@@ -35,8 +35,9 @@ services:
   adminer:
     image: adminer:4-standalone
     container_name: llm-chatbot-adminer
+    # SECURITY: Only expose on localhost, never in production
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       ADMINER_DEFAULT_SERVER: postgres
       ADMINER_DESIGN: pepa-linha-dark
@@ -45,6 +46,9 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    profiles:
+      - dev
+      - adminer
 
   chatbot:
     build: .
@@ -57,7 +61,7 @@ services:
       DB_PORT: 5432
       DB_NAME: llm_chatbot_dev
       DB_USER: postgres
-      DB_PASSWORD: password
+      DB_PASSWORD: ${DB_PASSWORD:-changeme_secure_password_2024}
       REDIS_HOST: redis
       REDIS_PORT: 6379
     depends_on:

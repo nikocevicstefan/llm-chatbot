@@ -6,6 +6,12 @@ const redisConfig = {
     password: process.env.REDIS_PASSWORD || '',
     retryDelayOnFailover: 100,
     maxRetriesPerRequest: 3,
+    // Enable TLS for production environments
+    ...(process.env.NODE_ENV === 'production' && process.env.REDIS_TLS === 'true' && {
+        tls: {
+            rejectUnauthorized: process.env.REDIS_TLS_REJECT_UNAUTHORIZED !== 'false'
+        }
+    }),
 };
 
 export const redis = new Redis(redisConfig);

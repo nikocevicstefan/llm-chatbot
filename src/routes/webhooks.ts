@@ -9,6 +9,12 @@ import {
 import { AIService } from '../services/ai-service';
 import { messageQueue } from '../queue/queue-manager';
 
+// Helper function to safely extract string headers
+function getStringHeader(req: Request, headerName: string): string | undefined {
+  const header = req.headers[headerName];
+  return typeof header === 'string' ? header : undefined;
+}
+
 const router = express.Router();
 
 // Initialize AI service for health checks
@@ -25,7 +31,7 @@ router.post('/telegram', async (req: Request, res: Response): Promise<void> => {
     }
 
     // Method 1: Check secret token if configured (preferred)
-    const secretToken = req.headers['x-telegram-bot-api-secret-token'] as string;
+    const secretToken = getStringHeader(req, 'x-telegram-bot-api-secret-token');
     if (process.env.TELEGRAM_WEBHOOK_SECRET) {
       if (secretToken !== process.env.TELEGRAM_WEBHOOK_SECRET) {
         console.error('Invalid Telegram webhook secret token');
@@ -35,7 +41,7 @@ router.post('/telegram', async (req: Request, res: Response): Promise<void> => {
       console.log('✅ Telegram secret token verified');
     } else {
       // Method 2: Bot token HMAC verification (fallback for your current setup)
-      const telegramSignature = req.headers['x-telegram-signature'] as string;
+      const telegramSignature = getStringHeader(req, 'x-telegram-signature');
       if (!verifyTelegramBotTokenSignature(req.rawBody, telegramSignature)) {
         console.error('Invalid Telegram bot token signature');
         res.status(401).json({ error: 'Unauthorized' });
@@ -127,8 +133,8 @@ router.post('/slack', async (req: Request, res: Response): Promise<void> => {
     }
 
     // Verify Slack signature
-    const timestamp = req.headers['x-slack-request-timestamp'] as string;
-    const signature = req.headers['x-slack-signature'] as string;
+    const timestamp = getStringHeader(req, 'x-slack-request-timestamp');
+    const signature = getStringHeader(req, 'x-slack-signature');
 
     if (!timestamp || !signature) {
       console.error('Missing Slack signature headers');
@@ -210,31 +216,23 @@ router.post('/slack', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// Health check for webhooks
+// Health check for webhooks - sanitized for security
 router.get('/health', async (_req: Request, res: Response) => {
   try {
     const aiHealth = await aiService.isHealthy();
     
+    // Only return basic health status, no configuration details
     res.status(200).json({
       status: 'ok',
-      endpoints: {
-        telegram: '/webhook/telegram',
-        slack: '/webhook/slack'
-      },
-      environment: {
-        telegram_configured: !!process.env.TELEGRAM_BOT_TOKEN,
-        slack_configured: !!process.env.SLACK_SIGNING_SECRET,
-        openai_configured: !!process.env.OPENAI_API_KEY,
-        selfhosted_configured: !!(process.env.SELFHOSTED_API_KEY && process.env.SELFHOSTED_BASE_URL),
-        fallback_openai_configured: !!process.env.FALLBACK_OPENAI_API_KEY,
-        fallback_selfhosted_configured: !!(process.env.FALLBACK_SELFHOSTED_API_KEY && process.env.FALLBACK_SELFHOSTED_BASE_URL)
-      },
-      ai_service: aiHealth
+      timestamp: new Date().toISOString(),
+      services: {
+        ai: aiHealth.overall ? 'healthy' : 'degraded'
+      }
     });
   } catch (error) {
-    res.status(500).json({
+    res.status(503).json({
       status: 'error',
-      error: 'Failed to check AI service health'
+      timestamp: new Date().toISOString()
     });
   }
 });

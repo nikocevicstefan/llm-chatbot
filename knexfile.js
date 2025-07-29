@@ -8,7 +8,9 @@ const config = {
       port: parseInt(process.env.DB_PORT || '5432'),
       database: process.env.DB_NAME || 'llm_chatbot_dev',
       user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || 'password',
+      password: process.env.DB_PASSWORD || (() => {
+        throw new Error('DB_PASSWORD environment variable is required');
+      })(),
     },
     pool: {
       min: 2,
@@ -30,7 +32,9 @@ const config = {
       port: parseInt(process.env.DB_PORT || '5432'),
       database: process.env.DB_NAME_TEST || 'llm_chatbot_test',
       user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || 'password',
+      password: process.env.DB_PASSWORD || (() => {
+        throw new Error('DB_PASSWORD environment variable is required');
+      })(),
     },
     pool: {
       min: 1,
@@ -52,7 +56,12 @@ const config = {
       port: parseInt(process.env.DB_PORT || '5432'),
       database: process.env.DB_NAME || 'llm_chatbot',
       user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || 'password',
+      password: process.env.DB_PASSWORD || (() => {
+        throw new Error('DB_PASSWORD environment variable is required');
+      })(),
+      ssl: process.env.NODE_ENV === 'production' ? {
+        rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false'
+      } : false,
     },
     pool: {
       min: 2,

@@ -13,6 +13,12 @@ export const messageQueue = new Queue<MessageJob>('message-processing', {
         host: process.env.REDIS_HOST || 'localhost',
         port: parseInt(process.env.REDIS_PORT || '6379'),
         password: process.env.REDIS_PASSWORD || '',
+        // Enable TLS for production environments
+        ...(process.env.NODE_ENV === 'production' && process.env.REDIS_TLS === 'true' && {
+            tls: {
+                rejectUnauthorized: process.env.REDIS_TLS_REJECT_UNAUTHORIZED !== 'false'
+            }
+        }),
     },
     defaultJobOptions: {
         removeOnComplete: 100, // Keep last 100 completed jobs
