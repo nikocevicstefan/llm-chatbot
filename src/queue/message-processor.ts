@@ -89,7 +89,7 @@ export const processMessage = async (job: Job<MessageJob>) => {
     
     // Persist user message to database
     const { conversation } = await ConversationService.addUserMessage(
-      platform as any,
+      platform,
       messageData.channelId,
       userId,
       messageData.text,

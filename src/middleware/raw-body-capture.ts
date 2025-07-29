@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
+import '../types/express';
 
 interface RawBodyOptions {
     limit?: number;
@@ -84,7 +85,7 @@ export function createRawBodyCapture(options: RawBodyOptions = {}) {
 
             try {
                 // Store raw body for signature verification
-                (req as any).rawBody = data;
+                req.rawBody = data;
 
                 // Parse JSON
                 if (data.trim()) {
